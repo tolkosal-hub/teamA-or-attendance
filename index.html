@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OR Staff Attendance & Case Tracker</title>
+    <!-- Tailwind CSS for modern UI -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- Flatpickr for clean Calendar Picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        .dropdown-content { display: none; }
+        .dropdown-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal pb-12">
+
+    <!-- LOGIN PANEL -->
+    <div id="loginSection" class="min-h-screen flex items-center justify-center bg-gray-900 px-4">
+        <div class="max-w-md w-full bg-white rounded-lg shadow-xl p-8">
+            <div class="text-3xl font-bold text-gray-800 text-center mb-8">🏥 OR Portal Login</div>
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="username">Username:</label>
+                    <input type="text" id="username" class="shadow border rounded w-full py-3 px-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600" placeholder="Enter username..." required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="password">Password:</label>
+                    <input type="password" id="password" class="shadow border rounded w-full py-3 px-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600" placeholder="Enter password..." required>
+                </div>
+                <div id="loginError" class="text-red-500 text-sm font-semibold hidden text-center">Invalid username or password. Please try again.</div>
+                <div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none transition duration-150">
+                        Sign In
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP PANEL -->
+    <div id="appSection" class="hidden">
+        <!-- Navbar -->
+        <nav class="bg-blue-700 text-white shadow-md p-4 flex justify-between items-center">
+            <h1 class="text-xl font-bold">🏥 OR Management & Attendance Portal</h1>
+            <div class="flex items-center space-x-3">
+                <div class="text-sm bg-blue-800 px-3 py-1 rounded-full">
+                    Logged in as: <span id="displayUsername" class="font-semibold"></span> (Surgeon)
+                </div>
+                <button id="logoutBtn" class="bg-red-600 hover:bg-red-700 text-xs px-3 py-1 rounded font-bold transition">Logout</button>
+            </div>
+        </nav>
+
+        <!-- Main Container -->
+        <div class="container mx-auto mt-8 max-w-3xl p-4">
+            
+            <div class="bg-white shadow-lg rounded-lg p-6 mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">OR Case & Staff Attendance Form</h2>
+                
+                <form id="orForm" class="space-y-5">
+                    
+                    <!-- 1. Calendar Picker -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="calendarPicker">Date of Surgery:</label>
+                        <input type="text" id="calendarPicker" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Select Date..." required>
+                    </div>
+
+                    <!-- 2. Surgeon -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="surgeon">Surgeon:</label>
+                        <input type="text" id="surgeon" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-gray-100 cursor-not-allowed" readonly required>
+                    </div>
+
+                    <!-- 3. Case Status -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="caseStatus">Case Status:</label>
+                        <select id="caseStatus" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" required>
+                            <option value="" disabled selected>-- Select Case Status --</option>
+                            <option value="Emergency">Emergency</option>
+                            <option value="Elective">Elective</option>
+                            <option value="On Request">On Request</option>
+                        </select>
+                    </div>
+
+                    <!-- 4. Diagnosis (A-Z with Other at bottom) -->
+                    <div class="relative">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Diagnosis:</label>
+                        <div id="diagnosisDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
+                            <span id="diagnosisSelectedText">Select or search diagnosis...</span>
+                            <span class="text-gray-400">&#9662;</span>
+                        </div>
+                        <div id="diagnosisMenu" class="dropdown-content absolute z-10 w-full bg-white border rounded shadow-lg mt-1 p-3 space-y-2">
+                            <input type="text" id="diagnosisSearchInput" class="shadow border rounded w-full py-2 px-3 text-gray-700 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2" placeholder="🔍 Search diagnosis...">
+                            
+                            <div id="diagnosisListContainer" class="max-h-48 overflow-y-auto space-y-1 text-sm">
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Acute Appendicitis" class="mr-2"> Acute Appendicitis</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Acute Urinary Retention" class="mr-2"> Acute Urinary Retention</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Ankle/Foot fracture" class="mr-2"> Ankle/Foot fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Blunt abdominal trauma" class="mr-2"> Blunt abdominal trauma</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Bowel Obstruction" class="mr-2"> Bowel Obstruction</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Clavicle fracture" class="mr-2"> Clavicle fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Deep Surgical Site Infection" class="mr-2"> Deep Surgical Site Infection</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Dislocation" class="mr-2"> Dislocation</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Facial Trauma" class="mr-2"> Facial Trauma</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Femoral fracture" class="mr-2"> Femoral fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Forearm fracture" class="mr-2"> Forearm fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Head Trauma" class="mr-2"> Head Trauma</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Humerus fracture" class="mr-2"> Humerus fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Hydro/Pyonephrosis" class="mr-2"> Hydro/Pyonephrosis</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Knee Injury" class="mr-2"> Knee Injury</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Open fracture" class="mr-2"> Open fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Pelvic fracture" class="mr-2"> Pelvic fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Penetrated abdominal trauma" class="mr-2"> Penetrated abdominal trauma</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Peritonitis" class="mr-2"> Peritonitis</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Soft tissue infection/abscess" class="mr-2"> Soft tissue infection/abscess</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Strangulated Hernia" class="mr-2"> Strangulated Hernia</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Tibia Fracture" class="mr-2"> Tibia Fracture</label>
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Wrist/hand fracture" class="mr-2"> Wrist/hand fracture</label>
+                                <!-- Exceptionally pinned at the bottom -->
+                                <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer border-t pt-2 mt-1"><input type="radio" name="diagnosisRadio" value="Other (Please Specify)" class="mr-2"> Other (Please Specify)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Other Diagnosis Input -->
+                    <div id="otherDiagnosisBox" class="hidden">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="otherDiagnosisText">Specify Diagnosis (Other):</label>
+                        <input type="text" id="otherDiagnosisText" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Please specify diagnosis...">
+                    </div>
+
+                    <!-- 5. Planned Time to start -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="plannedTime">Planned Time to Start:</label>
+                        <input type="text" id="plannedTime" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Select Planned Start Time..." required>
+                    </div>
+
+                    <!-- 6. Actual Start Time -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="actualTime">Actual Start Time:</label>
+                        <input type="text" id="actualTime" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Select Actual Start Time..." required>
+                    </div>
+
+                    <!-- 7. Late Reason Section -->
+                    <div id="lateReasonSection" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded space-y-3">
+                        <label class="block text-gray-800 text-sm font-bold">If start late, give a reason:</label>
+                        <div class="space-y-2 text-sm text-gray-700">
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="Surgeon was busy at OPD/IPD" class="mr-2"> Surgeon was busy at OPD/IPD</label>
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="Surgeon arrived late" class="mr-2"> Surgeon arrived late</label>
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="Scrub nurses arrived late" class="mr-2"> Scrub nurses arrived late</label>
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="Anesthetist arrived late" class="mr-2"> Anesthetist arrived late</label>
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="No available room due to scheduled case has not yet finished" class="mr-2"> No available room due to scheduled case has not yet finished</label>
+                            <label class="flex items-center"><input type="radio" name="lateReason" value="Other" id="radioOther" class="mr-2"> Other</label>
+                        </div>
+                        <div id="otherReasonBox" class="hidden mt-2">
+                            <input type="text" id="otherReasonText" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="(Please specify reason)">
+                        </div>
+                    </div>
+
+                    <!-- 8. Anesthetist -->
+                    <div class="relative">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Anesthetist:</label>
+                        <div id="anesthetistDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
+                            <span id="anesthetistSelectedText">Select Anesthetist(s)...</span>
+                            <span class="text-gray-400">&#9662;</span>
+                        </div>
+                        <div id="anesthetistMenu" class="dropdown-content absolute z-10 w-full bg-white border rounded shadow-lg mt-1 p-3 space-y-2">
+                            <label class="flex items-center"><input type="checkbox" name="anesthetist" value="Soum Chamroeun" class="mr-2"> Soum Chamroeun</label>
+                            <label class="flex items-center"><input type="checkbox" name="anesthetist" value="Khong Savann" class="mr-2"> Khong Savann</label>
+                            <label class="flex items-center"><input type="checkbox" name="anesthetist" value="Khen Tum" class="mr-2"> Khen Tum</label>
+                        </div>
+                    </div>
+
+                    <!-- 9. Scrub Nurse -->
+                    <div class="relative">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Scrub Nurse:</label>
+                        <div id="nurseDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
+                            <span id="nurseSelectedText">Select Scrub Nurse(s)...</span>
+                            <span class="text-gray-400">&#9662;</span>
+                        </div>
+                        <div id="nurseMenu" class="dropdown-content absolute z-10 w-full bg-white border rounded shadow-lg mt-1 p-3 space-y-2">
+                            <label class="flex items-center"><input type="checkbox" name="nurse" value="Voeun Kong" class="mr-2"> Voeun Kong</label>
+                            <label class="flex items-center"><input type="checkbox" name="nurse" value="Kao Savuthy" class="mr-2"> Kao Savuthy</label>
+                            <label class="flex items-center"><input type="checkbox" name="nurse" value="Bioen Vanda" class="mr-2"> Bioen Vanda</label>
+                            <label class="flex items-center"><input type="checkbox" name="nurse" value="Khon Puthi" class="mr-2"> Khon Puthi</label>
+                        </div>
+                    </div>
+
+                    <!-- 10. Staffs with permission -->
+                    <div class="relative">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Staffs with permission:</label>
+                        <div id="permissionStaffDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
+                            <span id="permissionStaffSelectedText">Select Staff(s) with Permission...</span>
+                            <span class="text-gray-400">&#9662;</span>
+                        </div>
+                        <div id="permissionStaffMenu" class="dropdown-content absolute z-10 w-full bg-white border rounded shadow-lg mt-1 p-3 space-y-2">
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Dr. Tol Kosal" class="mr-2"> Dr. Tol Kosal (Surgeon)</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Dr. Soum Ratha" class="mr-2"> Dr. Soum Ratha (Surgeon)</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Dr. Ton Vathanak" class="mr-2"> Dr. Ton Vathanak (Surgeon)</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Soum Chamroeun" class="mr-2"> Soum Chamroeun</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Khong Savann" class="mr-2"> Khong Savann</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Khen Tum" class="mr-2"> Khen Tum</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Voeun Kong" class="mr-2"> Voeun Kong</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Kao Savuthy" class="mr-2"> Kao Savuthy</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Bioen Vanda" class="mr-2"> Bioen Vanda</label>
+                            <label class="flex items-center"><input type="checkbox" name="permStaff" value="Khon Puthi" class="mr-2"> Khon Puthi</label>
+                        </div>
+                    </div>
+
+                    <!-- 11. Type of permission (Radio buttons, Single Selection) -->
+                    <div class="relative">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Type of permission:</label>
+                        <div id="permTypeDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
+                            <span id="permTypeSelectedText">Select Permission Type...</span>
+                            <span class="text-gray-400">&#9662;</span>
+                        </div>
+                        <div id="permTypeMenu" class="dropdown-content absolute z-10 w-full bg-white border rounded shadow-lg mt-1 p-3 space-y-2">
+                            <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="permType" value="Full day permission" class="mr-2"> Full day permission</label>
+                            <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="permType" value="Patient Transfer" class="mr-2"> Patient Transfer</label>
+                            <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="permType" value="Can’t join this case immediately" class="mr-2"> Can’t join this case immediately</label>
+                            <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="permType" value="Sudden Health Problem" class="mr-2"> Sudden Health Problem</label>
+                            <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer border-t pt-2 mt-1"><input type="radio" name="permType" value="Other" class="mr-2"> Other</label>
+                        </div>
+                    </div>
+
+                    <!-- Custom Other Permission Input Box -->
+                    <div id="otherPermTypeBox" class="hidden">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="otherPermTypeText">Specify Permission (Other):</label>
+                        <input type="text" id="otherPermTypeText" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Please specify permission type...">
+                    </div>
+
+                    <!-- Actions Button -->
+                    <div class="flex items-center justify-end pt-6 space-x-4 border-t mt-4">
+                        <button type="button" id="cancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded focus:outline-none transition duration-150 flex items-center space-x-2">
+                            <span>❌ Cancel</span>
+                        </button>
+                        <button type="submit" id="submitBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded focus:outline-none transition duration-150 flex items-center space-x-2">
+                            <span>💾 Save Record</span>
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    
+    <!-- Script Logic -->
+    <script>
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyOOo_oDW3q_cVCYRtEvtIGe0Xk5PHE8Ew08Iy4bPH2yQ2ctnHg6LXG-sY-tga5OSs/exec';
+
+        const usersDatabase = {
+            "kosal": { pass: "22222222", name: "Dr. Tol Kosal" },
+            "soumratha": { pass: "11112222", name: "Dr. Soum Ratha" },
+            "tonvathanak": { pass: "88889999", name: "Dr. Ton Vathanak" }
+        };
+
+        let currentSurgeonName = "";
+        let calendarInstance = null;
+
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const userIn = document.getElementById('username').value.trim();
+            const passIn = document.getElementById('password').value;
+            const errorDiv = document.getElementById('loginError');
+
+            if (usersDatabase[userIn] && usersDatabase[userIn].pass === passIn) {
+                currentSurgeonName = usersDatabase[userIn].name;
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('appSection').classList.remove('hidden');
+                initApp();
+            } else {
+                errorDiv.classList.remove('hidden');
+            }
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', function() {
+            document.getElementById('appSection').classList.add('hidden');
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('loginError').classList.add('hidden');
+        });
+
+        function initApp() {
+            document.getElementById('displayUsername').innerText = currentSurgeonName;
+            document.getElementById('surgeon').value = currentSurgeonName;
+
+            calendarInstance = flatpickr("#calendarPicker", {
+                dateFormat: "Y-m-d",
+                defaultDate: "today"
+            });
+
+            const timePickerConfig = {
+                enableTime: true,
+                noCalendar: true,
+                dateFormat: "H:i",
+                time_24hr: true,
+                minuteIncrement: 5
+            };
+
+            flatpickr("#plannedTime", timePickerConfig);
+
+            flatpickr("#actualTime", {
+                ...timePickerConfig,
+                onChange: function(selectedDates, dateStr) {
+                    checkIfLate(document.getElementById('plannedTime').value, dateStr);
+                }
+            });
+
+            // Diagnosis Dropdown
+            const diagToggle = document.getElementById('diagnosisDropdownToggle');
+            const diagMenu = document.getElementById('diagnosisMenu');
+            const diagSelectedText = document.getElementById('diagnosisSelectedText');
+            const diagSearchInput = document.getElementById('diagnosisSearchInput');
+            const diagnosisRadios = document.querySelectorAll('input[name="diagnosisRadio"]');
+            const otherDiagBox = document.getElementById('otherDiagnosisBox');
+
+            diagToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                diagMenu.classList.toggle('active');
+                if(diagMenu.classList.contains('active')) diagSearchInput.focus();
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!diagToggle.contains(e.target) && !diagMenu.contains(e.target)) {
+                    diagMenu.classList.remove('active');
+                }
+            });
+
+            diagSearchInput.addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                diagnosisRadios.forEach(radio => {
+                    const label = radio.parentElement;
+                    if (radio.value.toLowerCase().includes(term)) {
+                        label.style.display = 'flex';
+                    } else {
+                        label.style.display = 'none';
+                    }
+                });
+            });
+
+            diagnosisRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    diagSelectedText.innerText = this.value;
+                    diagMenu.classList.remove('active');
+
+                    if (this.value === "Other (Please Specify)") {
+                        otherDiagBox.classList.remove('hidden');
+                        document.getElementById('otherDiagnosisText').required = true;
+                    } else {
+                        otherDiagBox.classList.add('hidden');
+                        document.getElementById('otherDiagnosisText').required = false;
+                        document.getElementById('otherDiagnosisText').value = '';
+                    }
+                });
+            });
+
+            function checkIfLate(planned, actual) {
+                if (!planned || !actual) {
+                    hideLateSection();
+                    return;
+                }
+
+                const [pLHours, pLMins] = planned.split(':').map(Number);
+                const [aLHours, aLMins] = actual.split(':').map(Number);
+
+                const plannedTotalMins = pLHours * 60 + pLMins;
+                const actualTotalMins = aLHours * 60 + aLMins;
+                const diffMins = actualTotalMins - plannedTotalMins;
+
+                if (diffMins >= 30) {
+                    document.getElementById('lateReasonSection').classList.remove('hidden');
+                } else {
+                    hideLateSection();
+                }
+            }
+
+            function hideLateSection() {
+                document.getElementById('lateReasonSection').classList.add('hidden');
+                document.querySelectorAll('input[name="lateReason"]').forEach(el => el.checked = false);
+                document.getElementById('otherReasonBox').classList.add('hidden');
+                document.getElementById('otherReasonText').value = '';
+            }
+
+            document.getElementById('plannedTime').addEventListener('change', function() {
+                const actualVal = document.getElementById('actualTime').value;
+                checkIfLate(this.value, actualVal);
+            });
+
+            document.querySelectorAll('input[name="lateReason"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'Other' && this.checked) {
+                        document.getElementById('otherReasonBox').classList.remove('hidden');
+                    } else {
+                        document.getElementById('otherReasonBox').classList.add('hidden');
+                    }
+                });
+            });
+
+            function setupDropdown(toggleId, menuId, textId, checkboxName) {
+                const toggle = document.getElementById(toggleId);
+                const menu = document.getElementById(menuId);
+                const textSpan = document.getElementById(textId);
+                const checkboxes = document.querySelectorAll(`input[name="${checkboxName}"]`);
+
+                toggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    menu.classList.toggle('active');
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!toggle.contains(e.target) && !menu.contains(e.target)) {
+                        menu.classList.remove('active');
+                    }
+                });
+
+                checkboxes.forEach(box => {
+                    box.addEventListener('change', () => {
+                        const selected = Array.from(checkboxes).filter(i => i.checked).map(i => i.value);
+                        if (selected.length === 0) {
+                            textSpan.innerText = toggleId.includes('anesthetist') ? "Select Anesthetist(s)..." :
+                                                 toggleId.includes('nurse') ? "Select Scrub Nurse(s)..." :
+                                                 toggleId.includes('permissionStaff') ? "Select Staff(s) with Permission..." : "Select Permission Type(s)...";
+                        } else {
+                            textSpan.innerText = selected.join(', ');
+                        }
+                    });
+                });
+            }
+
+            setupDropdown('anesthetistDropdownToggle', 'anesthetistMenu', 'anesthetistSelectedText', 'anesthetist');
+            setupDropdown('nurseDropdownToggle', 'nurseMenu', 'nurseSelectedText', 'nurse');
+            setupDropdown('permissionStaffDropdownToggle', 'permissionStaffMenu', 'permissionStaffSelectedText', 'permStaff');
+
+            // LOGIC FOR "Type of permission" RADIO BUTTONS
+            const permTypeToggle = document.getElementById('permTypeDropdownToggle');
+            const permTypeMenu = document.getElementById('permTypeMenu');
+            const permTypeSelectedText = document.getElementById('permTypeSelectedText');
+            const permTypeRadios = document.querySelectorAll('input[name="permType"]');
+            const otherPermTypeBox = document.getElementById('otherPermTypeBox');
+            
+            permTypeToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                permTypeMenu.classList.toggle('active');
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!permTypeToggle.contains(e.target) && !permTypeMenu.contains(e.target)) {
+                    permTypeMenu.classList.remove('active');
+                }
+            });
+            
+            permTypeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    permTypeSelectedText.innerText = this.value;
+                    permTypeMenu.classList.remove('active'); // Close menu on selection
+
+                    if (this.value === "Other") {
+                        otherPermTypeBox.classList.remove('hidden');
+                        document.getElementById('otherPermTypeText').required = true;
+                    } else {
+                        otherPermTypeBox.classList.add('hidden');
+                        document.getElementById('otherPermTypeText').required = false;
+                        document.getElementById('otherPermTypeText').value = '';
+                    }
+                });
+            });
+
+            // Resets the UI fields to their default state
+            function resetFormUI() {
+                document.getElementById('orForm').reset();
+                document.getElementById('surgeon').value = currentSurgeonName;
+                if(calendarInstance) {
+                    calendarInstance.setDate(new Date(), true);
+                }
+                diagSelectedText.innerText = "Select or search diagnosis...";
+                otherDiagBox.classList.add('hidden');
+                hideLateSection();
+                document.getElementById('anesthetistSelectedText').innerText = "Select Anesthetist(s)...";
+                document.getElementById('nurseSelectedText').innerText = "Select Scrub Nurse(s)...";
+                document.getElementById('permissionStaffSelectedText').innerText = "Select Staff(s) with Permission...";
+                
+                document.getElementById('permTypeSelectedText').innerText = "Select Permission Type...";
+                otherPermTypeBox.classList.add('hidden');
+            }
+
+            // Cancel Button Action
+            document.getElementById('cancelBtn').addEventListener('click', function() {
+                if(confirm("Are you sure you want to clear the form?")) {
+                    resetFormUI();
+                }
+            });
+
+            document.getElementById('orForm').onsubmit = function(e) {
+                e.preventDefault();
+
+                // Get Diagnosis Value (Sending ONLY the custom text if Other is selected)
+                const selectedDiagRadio = document.querySelector('input[name="diagnosisRadio"]:checked');
+                let finalDiagnosis = selectedDiagRadio ? selectedDiagRadio.value : "";
+                if (finalDiagnosis === "Other (Please Specify)") {
+                    finalDiagnosis = document.getElementById('otherDiagnosisText').value; 
+                }
+
+                const formData = {
+                    date: document.getElementById('calendarPicker').value,
+                    inputTime: new Date().toLocaleTimeString(), // Capture ONLY time
+                    surgeon: document.getElementById('surgeon').value,
+                    caseStatus: document.getElementById('caseStatus').value,
+                    diagnosis: finalDiagnosis,
+                    plannedTime: document.getElementById('plannedTime').value,
+                    actualTime: document.getElementById('actualTime').value,
+                    lateReason: getLateReasonValue(),
+                    anesthetists: getCheckedValues('anesthetist'),
+                    scrubNurses: getCheckedValues('nurse'),
+                    staffWithPermission: getCheckedValues('permStaff'),
+                    permissionTypes: getPermissionTypesValue() 
+                };
+
+                const submitBtn = document.getElementById('submitBtn');
+                submitBtn.disabled = true;
+                submitBtn.innerText = "Saving...";
+
+                // Background save: Fire request but don't wait for the long response
+                fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Does not allow reading response, perfect for fire-and-forget
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                }).catch(error => {
+                    console.error('Error submitting in background', error);
+                });
+
+                // Instantly update UI for a faster user experience
+                setTimeout(() => {
+                    alert("Record successfully saved to Google Sheets!");
+                    resetFormUI();
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "<span>💾 Save Record</span>";
+                }, 500); // Wait 0.5s just to show the user the button actually clicked
+            };
+
+            function getCheckedValues(name) {
+                return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(el => el.value).join(', ');
+            }
+
+            // Get Permission Type (Sending ONLY the custom text if Other is selected)
+            function getPermissionTypesValue() {
+                const selectedRadio = document.querySelector('input[name="permType"]:checked');
+                if (!selectedRadio) return "";
+                if (selectedRadio.value === "Other") {
+                    return document.getElementById('otherPermTypeText').value; 
+                }
+                return selectedRadio.value;
+            }
+
+            // Get Late Reason (Sending ONLY the custom text if Other is selected)
+            function getLateReasonValue() {
+                const selectedRadio = document.querySelector('input[name="lateReason"]:checked');
+                if (!selectedRadio || document.getElementById('lateReasonSection').classList.contains('hidden')) return "On Time / Ignored (< 30m)";
+                if (selectedRadio.value === 'Other') {
+                    return document.getElementById('otherReasonText').value; 
+                }
+                return selectedRadio.value;
+            }
+        }
+    </script>
+</body>
+</html>
