@@ -30,7 +30,7 @@
                 </div>
                 <div id="loginError" class="text-red-500 text-sm font-semibold hidden text-center">Invalid username or password. Please try again.</div>
                 <div>
-                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none transition duration-150">
+                    <button type="submit" id="loginBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none transition duration-150">
                         Sign In
                     </button>
                 </div>
@@ -55,7 +55,10 @@
         <div class="container mx-auto mt-8 max-w-3xl p-4">
             
             <div class="bg-white shadow-lg rounded-lg p-6 mb-8">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">OR Case & Staff Attendance Form</h2>
+                <div class="flex justify-between items-center mb-6 border-b pb-2">
+                    <h2 class="text-2xl font-bold text-gray-800">OR Case & Staff Attendance Form</h2>
+                    <span id="syncStatus" class="text-xs font-bold px-2 py-1 rounded bg-yellow-200 text-yellow-800">Synchronizing Schedule...</span>
+                </div>
                 
                 <form id="orForm" class="space-y-5">
                     
@@ -82,7 +85,7 @@
                         </select>
                     </div>
 
-                    <!-- 4. Diagnosis (A-Z with Other at bottom) -->
+                    <!-- 4. Diagnosis -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Diagnosis:</label>
                         <div id="diagnosisDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -116,7 +119,6 @@
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Strangulated Hernia" class="mr-2"> Strangulated Hernia</label>
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Tibia Fracture" class="mr-2"> Tibia Fracture</label>
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Wrist/hand fracture" class="mr-2"> Wrist/hand fracture</label>
-                                <!-- Exceptionally pinned at the bottom -->
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer border-t pt-2 mt-1"><input type="radio" name="diagnosisRadio" value="Other (Please Specify)" class="mr-2"> Other (Please Specify)</label>
                             </div>
                         </div>
@@ -239,8 +241,8 @@
                         <button type="button" id="cancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded focus:outline-none transition duration-150 flex items-center space-x-2">
                             <span>❌ Cancel</span>
                         </button>
-                        <button type="submit" id="submitBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded focus:outline-none transition duration-150 flex items-center space-x-2">
-                            <span>💾 Save Record</span>
+                        <button type="submit" id="submitBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded focus:outline-none transition duration-150 flex items-center space-x-2" disabled>
+                            <span>Loading Database...</span>
                         </button>
                     </div>
 
@@ -265,14 +267,48 @@
         let currentSurgeonName = "";
         let calendarInstance = null;
 
+        // REAL-TIME SERVER CACHE
+        let serverLoggedCases = [];
+
+        // Fetches actual data from Google Sheets upon login
+        function fetchServerData() {
+            const syncStatus = document.getElementById('syncStatus');
+            const submitBtn = document.getElementById('submitBtn');
+            syncStatus.innerText = "Synchronizing Schedule...";
+            syncStatus.className = "text-xs font-bold px-2 py-1 rounded bg-yellow-200 text-yellow-800";
+            
+            fetch(SCRIPT_URL)
+                .then(response => response.json())
+                .then(data => {
+                    serverLoggedCases = data;
+                    syncStatus.innerText = "Database Synced";
+                    syncStatus.className = "text-xs font-bold px-2 py-1 rounded bg-green-200 text-green-800";
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "<span>💾 Save Record</span>";
+                })
+                .catch(error => {
+                    console.error("Failed to sync data", error);
+                    syncStatus.innerText = "Sync Failed - Duplicate Check Inactive";
+                    syncStatus.className = "text-xs font-bold px-2 py-1 rounded bg-red-200 text-red-800";
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = "<span>💾 Save Record (Offline)</span>";
+                });
+        }
+
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const userIn = document.getElementById('username').value.trim();
             const passIn = document.getElementById('password').value;
             const errorDiv = document.getElementById('loginError');
+            const loginBtn = document.getElementById('loginBtn');
 
             if (usersDatabase[userIn] && usersDatabase[userIn].pass === passIn) {
                 currentSurgeonName = usersDatabase[userIn].name;
+                loginBtn.innerText = "Authorizing...";
+                
+                // Fetch existing cases right after login
+                fetchServerData();
+
                 document.getElementById('loginSection').classList.add('hidden');
                 document.getElementById('appSection').classList.remove('hidden');
                 initApp();
@@ -287,6 +323,7 @@
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
             document.getElementById('loginError').classList.add('hidden');
+            document.getElementById('loginBtn').innerText = "Sign In";
         });
 
         function initApp() {
@@ -311,7 +348,6 @@
 
             flatpickr("#plannedTime", timePickerConfig);
             
-            // Set Ended Time to current time upon opening
             flatpickr("#endedTime", {
                 ...timePickerConfig,
                 defaultDate: currentTimeStr
@@ -490,7 +526,6 @@
                     calendarInstance.setDate(new Date(), true);
                 }
                 
-                // Update Ended Time to the new current time after reset
                 const resetTime = new Date();
                 const resetTimeStr = String(resetTime.getHours()).padStart(2, '0') + ":" + String(resetTime.getMinutes()).padStart(2, '0');
                 const endedTimePicker = document.getElementById('endedTime')._flatpickr;
@@ -514,8 +549,82 @@
                 }
             });
 
+            function timeToMinutes(timeStr) {
+                if (!timeStr) return 0;
+                
+                // Google Sheets sometimes returns dates attached to time strings (e.g., "1899-12-30T10:00:00.000Z")
+                if (timeStr.includes("T")) {
+                    let d = new Date(timeStr);
+                    return (d.getUTCHours() * 60) + d.getUTCMinutes();
+                }
+                
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                return (hours * 60) + minutes;
+            }
+
+            function normalizeDateStr(dateStr) {
+                // If it's a full ISO string from Sheets, extract just YYYY-MM-DD
+                if (dateStr && dateStr.includes("T")) {
+                    return dateStr.split('T')[0];
+                }
+                return dateStr;
+            }
+
             document.getElementById('orForm').onsubmit = function(e) {
                 e.preventDefault();
+
+                const newDateRaw = document.getElementById('calendarPicker').value;
+                const newActual = document.getElementById('actualTime').value;
+                const newEnded = document.getElementById('endedTime').value;
+
+                if (!newActual || !newEnded) {
+                    alert("Please select both Actual Start Time and Ended Time.");
+                    return;
+                }
+
+                // Parse input times to minutes
+                let newStartMins = timeToMinutes(newActual);
+                let newEndMins = timeToMinutes(newEnded);
+
+                // Handle surgeries crossing midnight (e.g. 23:00 to 02:00)
+                if (newEndMins <= newStartMins) {
+                    newEndMins += 24 * 60; 
+                }
+
+                // DUPLICATE/OVERLAP CHECK AGAINST REAL SERVER DATA
+                let hasOverlap = false;
+                let overlapDetails = "";
+                
+                for (let i = 0; i < serverLoggedCases.length; i++) {
+                    let pastCase = serverLoggedCases[i];
+                    
+                    let normPastDate = normalizeDateStr(pastCase.date);
+                    
+                    // Only check cases on the SAME date for the SAME surgeon
+                    if (normPastDate === newDateRaw && pastCase.surgeon === currentSurgeonName) {
+                        let pastStart = timeToMinutes(pastCase.start);
+                        let pastEnd = timeToMinutes(pastCase.end);
+                        
+                        if (pastEnd <= pastStart) {
+                            pastEnd += 24 * 60;
+                        }
+
+                        // Overlap condition logic: A starts before B ends AND A ends after B starts
+                        if (newStartMins < pastEnd && newEndMins > pastStart) {
+                            hasOverlap = true;
+                            // Format past times back to readable strings if they came in as ISO
+                            let readablePastStart = pastCase.start.includes("T") ? new Date(pastCase.start).toISOString().substr(11,5) : pastCase.start;
+                            let readablePastEnd = pastCase.end.includes("T") ? new Date(pastCase.end).toISOString().substr(11,5) : pastCase.end;
+                            overlapDetails = `${readablePastStart} to ${readablePastEnd}`;
+                            break;
+                        }
+                    }
+                }
+
+                if (hasOverlap) {
+                    alert(`⚠️ Warning: Time Overlap Detected!\n\nYou cannot operate a new case between ${newActual} and ${newEnded} because you have already logged a case from ${overlapDetails} today.`);
+                    return;
+                }
 
                 const selectedDiagRadio = document.querySelector('input[name="diagnosisRadio"]:checked');
                 let finalDiagnosis = selectedDiagRadio ? selectedDiagRadio.value : "";
@@ -524,15 +633,15 @@
                 }
 
                 const formData = {
-                    date: document.getElementById('calendarPicker').value,
+                    date: newDateRaw,
                     inputTime: new Date().toLocaleTimeString(),
                     surgeon: document.getElementById('surgeon').value,
                     caseStatus: document.getElementById('caseStatus').value,
                     diagnosis: finalDiagnosis,
                     plannedTime: document.getElementById('plannedTime').value,
-                    actualTime: document.getElementById('actualTime').value,
+                    actualTime: newActual,
                     lateReason: getLateReasonValue(),
-                    endedTime: document.getElementById('endedTime').value, // <-- Included Ended Time
+                    endedTime: newEnded,
                     anesthetists: getCheckedValues('anesthetist'),
                     scrubNurses: getCheckedValues('nurse'),
                     staffWithPermission: getCheckedValues('permStaff'),
@@ -543,17 +652,28 @@
                 submitBtn.disabled = true;
                 submitBtn.innerText = "Saving...";
 
+                // TEXT/PLAIN to skip CORS Preflight rejection by Google Apps Script
                 fetch(SCRIPT_URL, {
                     method: 'POST',
                     mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(formData)
                 }).catch(error => {
-                    console.error('Error submitting in background', error);
+                    console.error('Error submitting', error);
                 });
 
+                // Optimistically assume success due to no-cors limitations
                 setTimeout(() => {
                     alert("Record successfully saved to Google Sheets!");
+                    
+                    // Inject new successful record directly into local server array to block immediate subsequent duplicates
+                    serverLoggedCases.push({
+                        date: newDateRaw,
+                        start: newActual,
+                        end: newEnded,
+                        surgeon: currentSurgeonName
+                    });
+
                     resetFormUI();
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = "<span>💾 Save Record</span>";
@@ -575,7 +695,7 @@
 
             function getLateReasonValue() {
                 const selectedRadio = document.querySelector('input[name="lateReason"]:checked');
-                if (!selectedRadio || document.getElementById('lateReasonSection').classList.contains('hidden')) return ""; // Changed to return blank string
+                if (!selectedRadio || document.getElementById('lateReasonSection').classList.contains('hidden')) return ""; 
                 if (selectedRadio.value === 'Other') {
                     return document.getElementById('otherReasonText').value; 
                 }
