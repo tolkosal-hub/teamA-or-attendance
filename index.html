@@ -85,7 +85,7 @@
                         </select>
                     </div>
 
-                    <!-- 4. Diagnosis -->
+                    <!-- 4. Diagnosis (A-Z with Other at bottom) -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Diagnosis:</label>
                         <div id="diagnosisDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -119,6 +119,7 @@
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Strangulated Hernia" class="mr-2"> Strangulated Hernia</label>
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Tibia Fracture" class="mr-2"> Tibia Fracture</label>
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer"><input type="radio" name="diagnosisRadio" value="Wrist/hand fracture" class="mr-2"> Wrist/hand fracture</label>
+                                <!-- Exceptionally pinned at the bottom -->
                                 <label class="flex items-center p-1 hover:bg-gray-100 rounded cursor-pointer border-t pt-2 mt-1"><input type="radio" name="diagnosisRadio" value="Other (Please Specify)" class="mr-2"> Other (Please Specify)</label>
                             </div>
                         </div>
@@ -264,13 +265,84 @@
             "tonvathanak": { pass: "88889999", name: "Dr. Ton Vathanak" }
         };
 
+        // GLOBAL UTILITY FUNCTIONS
+        function normalizeDateStr(dateStr) {
+            if (dateStr && dateStr.includes("T")) {
+                return dateStr.split('T')[0];
+            }
+            return dateStr;
+        }
+
+        function timeToMinutes(timeStr) {
+            if (!timeStr) return 0;
+            if (timeStr.includes("T")) {
+                let d = new Date(timeStr);
+                return (d.getUTCHours() * 60) + d.getUTCMinutes();
+            }
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return (hours * 60) + minutes;
+        }
+
         let currentSurgeonName = "";
         let calendarInstance = null;
+        let serverLoggedCases = JSON.parse(localStorage.getItem('or_logged_cases') || '[]');
+        let lockedStaffToday = new Set();
 
-        // REAL-TIME SERVER CACHE
-        let serverLoggedCases = [];
+        function refreshDropdownText(textId, checkboxName) {
+            const textSpan = document.getElementById(textId);
+            const checkboxes = document.querySelectorAll(`input[name="${checkboxName}"]`);
+            const selected = Array.from(checkboxes).filter(i => i.checked).map(i => i.value);
+            
+            if (selected.length === 0) {
+                if (checkboxName === 'anesthetist') textSpan.innerText = "Select Anesthetist(s)...";
+                if (checkboxName === 'nurse') textSpan.innerText = "Select Scrub Nurse(s)...";
+                if (checkboxName === 'permStaff') textSpan.innerText = "Select Staff(s) with Permission...";
+            } else {
+                textSpan.innerText = selected.join(', ');
+            }
+        }
 
-        // Fetches actual data from Google Sheets upon login
+        function updateAndApplyLockedStaff() {
+            lockedStaffToday.clear();
+            const selectedDate = document.getElementById('calendarPicker').value;
+            if (!selectedDate) return;
+
+            for (let i = 0; i < serverLoggedCases.length; i++) {
+                let pastCase = serverLoggedCases[i];
+                let normPastDate = normalizeDateStr(pastCase.date);
+                
+                if (normPastDate === selectedDate) {
+                    if (pastCase.staffPerm && pastCase.permType && pastCase.permType.trim() !== "") {
+                        if (pastCase.permType !== "Can’t join this case immediately") {
+                            let staffList = pastCase.staffPerm.split(',');
+                            staffList.forEach(staff => {
+                                if(staff.trim()) lockedStaffToday.add(staff.trim());
+                            });
+                        }
+                    }
+                }
+            }
+
+            const allStaffCheckboxes = document.querySelectorAll('input[name="anesthetist"], input[name="nurse"], input[name="permStaff"]');
+            allStaffCheckboxes.forEach(checkbox => {
+                const label = checkbox.parentElement;
+                if (lockedStaffToday.has(checkbox.value)) {
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.classList.add('opacity-50', 'line-through', 'text-red-500');
+                    label.title = "Staff is unavailable today due to permission status.";
+                } else {
+                    checkbox.disabled = false;
+                    label.classList.remove('opacity-50', 'line-through', 'text-red-500');
+                    label.title = "";
+                }
+            });
+
+            refreshDropdownText('anesthetistSelectedText', 'anesthetist');
+            refreshDropdownText('nurseSelectedText', 'nurse');
+            refreshDropdownText('permissionStaffSelectedText', 'permStaff');
+        }
+
         function fetchServerData() {
             const syncStatus = document.getElementById('syncStatus');
             const submitBtn = document.getElementById('submitBtn');
@@ -281,6 +353,9 @@
                 .then(response => response.json())
                 .then(data => {
                     serverLoggedCases = data;
+                    localStorage.setItem('or_logged_cases', JSON.stringify(serverLoggedCases));
+                    updateAndApplyLockedStaff();
+                    
                     syncStatus.innerText = "Database Synced";
                     syncStatus.className = "text-xs font-bold px-2 py-1 rounded bg-green-200 text-green-800";
                     submitBtn.disabled = false;
@@ -288,7 +363,9 @@
                 })
                 .catch(error => {
                     console.error("Failed to sync data", error);
-                    syncStatus.innerText = "Sync Failed - Duplicate Check Inactive";
+                    updateAndApplyLockedStaff();
+                    
+                    syncStatus.innerText = "Sync Failed - Using Offline Cache";
                     syncStatus.className = "text-xs font-bold px-2 py-1 rounded bg-red-200 text-red-800";
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = "<span>💾 Save Record (Offline)</span>";
@@ -306,7 +383,6 @@
                 currentSurgeonName = usersDatabase[userIn].name;
                 loginBtn.innerText = "Authorizing...";
                 
-                // Fetch existing cases right after login
                 fetchServerData();
 
                 document.getElementById('loginSection').classList.add('hidden');
@@ -332,7 +408,10 @@
 
             calendarInstance = flatpickr("#calendarPicker", {
                 dateFormat: "Y-m-d",
-                defaultDate: "today"
+                defaultDate: "today",
+                onChange: function(selectedDates, dateStr) {
+                    updateAndApplyLockedStaff();
+                }
             });
 
             const timePickerConfig = {
@@ -469,6 +548,11 @@
 
                 checkboxes.forEach(box => {
                     box.addEventListener('change', () => {
+                        // Prevent selection of disabled options
+                        if (box.disabled) {
+                            box.checked = false;
+                            return;
+                        }
                         const selected = Array.from(checkboxes).filter(i => i.checked).map(i => i.value);
                         if (selected.length === 0) {
                             textSpan.innerText = toggleId.includes('anesthetist') ? "Select Anesthetist(s)..." :
@@ -536,11 +620,12 @@
                 diagSelectedText.innerText = "Select or search diagnosis...";
                 otherDiagBox.classList.add('hidden');
                 hideLateSection();
-                document.getElementById('anesthetistSelectedText').innerText = "Select Anesthetist(s)...";
-                document.getElementById('nurseSelectedText').innerText = "Select Scrub Nurse(s)...";
-                document.getElementById('permissionStaffSelectedText').innerText = "Select Staff(s) with Permission...";
+                
                 document.getElementById('permTypeSelectedText').innerText = "Select Permission Type...";
                 otherPermTypeBox.classList.add('hidden');
+
+                // Reapply UI locks and reset text for staff
+                updateAndApplyLockedStaff();
             }
 
             document.getElementById('cancelBtn').addEventListener('click', function() {
@@ -548,27 +633,6 @@
                     resetFormUI();
                 }
             });
-
-            function timeToMinutes(timeStr) {
-                if (!timeStr) return 0;
-                
-                // Google Sheets sometimes returns dates attached to time strings (e.g., "1899-12-30T10:00:00.000Z")
-                if (timeStr.includes("T")) {
-                    let d = new Date(timeStr);
-                    return (d.getUTCHours() * 60) + d.getUTCMinutes();
-                }
-                
-                const [hours, minutes] = timeStr.split(':').map(Number);
-                return (hours * 60) + minutes;
-            }
-
-            function normalizeDateStr(dateStr) {
-                // If it's a full ISO string from Sheets, extract just YYYY-MM-DD
-                if (dateStr && dateStr.includes("T")) {
-                    return dateStr.split('T')[0];
-                }
-                return dateStr;
-            }
 
             document.getElementById('orForm').onsubmit = function(e) {
                 e.preventDefault();
@@ -582,25 +646,20 @@
                     return;
                 }
 
-                // Parse input times to minutes
                 let newStartMins = timeToMinutes(newActual);
                 let newEndMins = timeToMinutes(newEnded);
 
-                // Handle surgeries crossing midnight (e.g. 23:00 to 02:00)
                 if (newEndMins <= newStartMins) {
                     newEndMins += 24 * 60; 
                 }
 
-                // DUPLICATE/OVERLAP CHECK AGAINST REAL SERVER DATA
                 let hasOverlap = false;
                 let overlapDetails = "";
                 
                 for (let i = 0; i < serverLoggedCases.length; i++) {
                     let pastCase = serverLoggedCases[i];
-                    
                     let normPastDate = normalizeDateStr(pastCase.date);
                     
-                    // Only check cases on the SAME date for the SAME surgeon
                     if (normPastDate === newDateRaw && pastCase.surgeon === currentSurgeonName) {
                         let pastStart = timeToMinutes(pastCase.start);
                         let pastEnd = timeToMinutes(pastCase.end);
@@ -609,10 +668,8 @@
                             pastEnd += 24 * 60;
                         }
 
-                        // Overlap condition logic: A starts before B ends AND A ends after B starts
                         if (newStartMins < pastEnd && newEndMins > pastStart) {
                             hasOverlap = true;
-                            // Format past times back to readable strings if they came in as ISO
                             let readablePastStart = pastCase.start.includes("T") ? new Date(pastCase.start).toISOString().substr(11,5) : pastCase.start;
                             let readablePastEnd = pastCase.end.includes("T") ? new Date(pastCase.end).toISOString().substr(11,5) : pastCase.end;
                             overlapDetails = `${readablePastStart} to ${readablePastEnd}`;
@@ -632,6 +689,9 @@
                     finalDiagnosis = document.getElementById('otherDiagnosisText').value; 
                 }
 
+                const staffPerms = getCheckedValues('permStaff');
+                const permTypes = getPermissionTypesValue();
+
                 const formData = {
                     date: newDateRaw,
                     inputTime: new Date().toLocaleTimeString(),
@@ -644,39 +704,44 @@
                     endedTime: newEnded,
                     anesthetists: getCheckedValues('anesthetist'),
                     scrubNurses: getCheckedValues('nurse'),
-                    staffWithPermission: getCheckedValues('permStaff'),
-                    permissionTypes: getPermissionTypesValue() 
+                    staffWithPermission: staffPerms,
+                    permissionTypes: permTypes 
                 };
 
                 const submitBtn = document.getElementById('submitBtn');
                 submitBtn.disabled = true;
-                submitBtn.innerText = "Saving...";
+                submitBtn.innerHTML = "<span>Saving...</span>";
 
-                // TEXT/PLAIN to skip CORS Preflight rejection by Google Apps Script
                 fetch(SCRIPT_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(formData)
                 }).catch(error => {
-                    console.error('Error submitting', error);
+                    console.error('Error submitting in background', error);
                 });
 
-                // Optimistically assume success due to no-cors limitations
                 setTimeout(() => {
-                    alert("Record successfully saved to Google Sheets!");
-                    
-                    // Inject new successful record directly into local server array to block immediate subsequent duplicates
-                    serverLoggedCases.push({
-                        date: newDateRaw,
-                        start: newActual,
-                        end: newEnded,
-                        surgeon: currentSurgeonName
-                    });
+                    try {
+                        alert("Record successfully saved to Google Sheets!");
+                        
+                        serverLoggedCases.push({
+                            date: newDateRaw,
+                            start: newActual,
+                            end: newEnded,
+                            surgeon: currentSurgeonName,
+                            staffPerm: staffPerms,
+                            permType: permTypes
+                        });
+                        localStorage.setItem('or_logged_cases', JSON.stringify(serverLoggedCases));
 
-                    resetFormUI();
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = "<span>💾 Save Record</span>";
+                        resetFormUI();
+                    } catch (err) {
+                        console.error("UI Reset Issue", err);
+                    } finally {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = "<span>💾 Save Record</span>";
+                    }
                 }, 500);
             };
 
