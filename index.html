@@ -156,7 +156,13 @@
                         </div>
                     </div>
 
-                    <!-- 8. Anesthetist -->
+                    <!-- 8. Ended Time -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="endedTime">Ended Time:</label>
+                        <input type="text" id="endedTime" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white" placeholder="Select Ended Time..." required>
+                    </div>
+
+                    <!-- 9. Anesthetist -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Anesthetist:</label>
                         <div id="anesthetistDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -170,7 +176,7 @@
                         </div>
                     </div>
 
-                    <!-- 9. Scrub Nurse -->
+                    <!-- 10. Scrub Nurse -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Scrub Nurse:</label>
                         <div id="nurseDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -185,7 +191,7 @@
                         </div>
                     </div>
 
-                    <!-- 10. Staffs with permission -->
+                    <!-- 11. Staffs with permission -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Staffs with permission:</label>
                         <div id="permissionStaffDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -206,7 +212,7 @@
                         </div>
                     </div>
 
-                    <!-- 11. Type of permission (Radio buttons, Single Selection) -->
+                    <!-- 12. Type of permission (Radio buttons, Single Selection) -->
                     <div class="relative">
                         <label class="block text-gray-700 text-sm font-bold mb-2">Type of permission:</label>
                         <div id="permTypeDropdownToggle" class="shadow border rounded w-full py-2 px-3 bg-white cursor-pointer flex justify-between items-center text-gray-700">
@@ -299,8 +305,17 @@
                 time_24hr: true,
                 minuteIncrement: 5
             };
+            
+            const now = new Date();
+            const currentTimeStr = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
 
             flatpickr("#plannedTime", timePickerConfig);
+            
+            // Set Ended Time to current time upon opening
+            flatpickr("#endedTime", {
+                ...timePickerConfig,
+                defaultDate: currentTimeStr
+            });
 
             flatpickr("#actualTime", {
                 ...timePickerConfig,
@@ -455,7 +470,7 @@
             permTypeRadios.forEach(radio => {
                 radio.addEventListener('change', function() {
                     permTypeSelectedText.innerText = this.value;
-                    permTypeMenu.classList.remove('active'); // Close menu on selection
+                    permTypeMenu.classList.remove('active');
 
                     if (this.value === "Other") {
                         otherPermTypeBox.classList.remove('hidden');
@@ -468,25 +483,31 @@
                 });
             });
 
-            // Resets the UI fields to their default state
             function resetFormUI() {
                 document.getElementById('orForm').reset();
                 document.getElementById('surgeon').value = currentSurgeonName;
                 if(calendarInstance) {
                     calendarInstance.setDate(new Date(), true);
                 }
+                
+                // Update Ended Time to the new current time after reset
+                const resetTime = new Date();
+                const resetTimeStr = String(resetTime.getHours()).padStart(2, '0') + ":" + String(resetTime.getMinutes()).padStart(2, '0');
+                const endedTimePicker = document.getElementById('endedTime')._flatpickr;
+                if(endedTimePicker) {
+                    endedTimePicker.setDate(resetTimeStr, true);
+                }
+                
                 diagSelectedText.innerText = "Select or search diagnosis...";
                 otherDiagBox.classList.add('hidden');
                 hideLateSection();
                 document.getElementById('anesthetistSelectedText').innerText = "Select Anesthetist(s)...";
                 document.getElementById('nurseSelectedText').innerText = "Select Scrub Nurse(s)...";
                 document.getElementById('permissionStaffSelectedText').innerText = "Select Staff(s) with Permission...";
-                
                 document.getElementById('permTypeSelectedText').innerText = "Select Permission Type...";
                 otherPermTypeBox.classList.add('hidden');
             }
 
-            // Cancel Button Action
             document.getElementById('cancelBtn').addEventListener('click', function() {
                 if(confirm("Are you sure you want to clear the form?")) {
                     resetFormUI();
@@ -496,7 +517,6 @@
             document.getElementById('orForm').onsubmit = function(e) {
                 e.preventDefault();
 
-                // Get Diagnosis Value (Sending ONLY the custom text if Other is selected)
                 const selectedDiagRadio = document.querySelector('input[name="diagnosisRadio"]:checked');
                 let finalDiagnosis = selectedDiagRadio ? selectedDiagRadio.value : "";
                 if (finalDiagnosis === "Other (Please Specify)") {
@@ -505,13 +525,14 @@
 
                 const formData = {
                     date: document.getElementById('calendarPicker').value,
-                    inputTime: new Date().toLocaleTimeString(), // Capture ONLY time
+                    inputTime: new Date().toLocaleTimeString(),
                     surgeon: document.getElementById('surgeon').value,
                     caseStatus: document.getElementById('caseStatus').value,
                     diagnosis: finalDiagnosis,
                     plannedTime: document.getElementById('plannedTime').value,
                     actualTime: document.getElementById('actualTime').value,
                     lateReason: getLateReasonValue(),
+                    endedTime: document.getElementById('endedTime').value, // <-- Included Ended Time
                     anesthetists: getCheckedValues('anesthetist'),
                     scrubNurses: getCheckedValues('nurse'),
                     staffWithPermission: getCheckedValues('permStaff'),
@@ -522,30 +543,27 @@
                 submitBtn.disabled = true;
                 submitBtn.innerText = "Saving...";
 
-                // Background save: Fire request but don't wait for the long response
                 fetch(SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Does not allow reading response, perfect for fire-and-forget
+                    mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 }).catch(error => {
                     console.error('Error submitting in background', error);
                 });
 
-                // Instantly update UI for a faster user experience
                 setTimeout(() => {
                     alert("Record successfully saved to Google Sheets!");
                     resetFormUI();
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = "<span>💾 Save Record</span>";
-                }, 500); // Wait 0.5s just to show the user the button actually clicked
+                }, 500);
             };
 
             function getCheckedValues(name) {
                 return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(el => el.value).join(', ');
             }
 
-            // Get Permission Type (Sending ONLY the custom text if Other is selected)
             function getPermissionTypesValue() {
                 const selectedRadio = document.querySelector('input[name="permType"]:checked');
                 if (!selectedRadio) return "";
@@ -555,10 +573,9 @@
                 return selectedRadio.value;
             }
 
-            // Get Late Reason (Sending ONLY the custom text if Other is selected)
             function getLateReasonValue() {
                 const selectedRadio = document.querySelector('input[name="lateReason"]:checked');
-                if (!selectedRadio || document.getElementById('lateReasonSection').classList.contains('hidden')) return "On Time / Ignored (< 30m)";
+                if (!selectedRadio || document.getElementById('lateReasonSection').classList.contains('hidden')) return ""; // Changed to return blank string
                 if (selectedRadio.value === 'Other') {
                     return document.getElementById('otherReasonText').value; 
                 }
