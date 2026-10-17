@@ -74,6 +74,23 @@
                         <input type="text" id="surgeon" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-gray-100 cursor-not-allowed" readonly required>
                     </div>
 
+                    <!-- 2.5 Assistant -->
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="assistant">Assistant:</label>
+                        <select id="assistant" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white">
+                            <option value="" selected>-- Select Assistant (Optional) --</option>
+                            <option value="Dr. Tol Kosal">Dr. Tol Kosal</option>
+                            <option value="Dr. Soum Ratha">Dr. Soum Ratha</option>
+                            <option value="Dr. Ton Vathanak">Dr. Ton Vathanak</option>
+                            <option value="Other">Other (Please specify)</option>
+                        </select>
+                    </div>
+
+                    <!-- Custom Other Assistant Input Box -->
+                    <div id="otherAssistantBox" class="hidden">
+                        <input type="text" id="otherAssistantText" class="shadow border rounded w-full py-2 px-3 text-gray-700 bg-white mt-2" placeholder="Please specify assistant name...">
+                    </div>
+
                     <!-- 3. Case Status -->
                     <div>
                         <label class="block text-gray-700 text-sm font-bold mb-2" for="caseStatus">Case Status:</label>
@@ -266,12 +283,31 @@
         };
 
         // GLOBAL UTILITY FUNCTIONS
-        function normalizeDateStr(dateStr) {
-            if (dateStr && dateStr.includes("T")) {
+              function normalizeDateStr(dateStr) {
+            if (!dateStr) return "";
+            
+            // If already YYYY-MM-DD, return it
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                return dateStr;
+            }
+
+            // Convert Google Sheets long date string back to YYYY-MM-DD
+            const d = new Date(dateStr);
+            if (!isNaN(d.getTime())) {
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            
+            // Fallback for ISO strings
+            if (dateStr.includes("T")) {
                 return dateStr.split('T')[0];
             }
+            
             return dateStr;
         }
+
 
         function timeToMinutes(timeStr) {
             if (!timeStr) return 0;
@@ -302,6 +338,93 @@
             }
         }
 
+        // --- NEW LOGIC: Real-Time Staff Exclusion ---
+        function applyStaffLocks() {
+            // 1. Gather all currently selected active staff
+            const activeStaff = new Set();
+            if (document.getElementById('surgeon').value) {
+                activeStaff.add(document.getElementById('surgeon').value);
+            }
+            
+            const assistantVal = document.getElementById('assistant').value;
+            if (assistantVal && assistantVal !== 'Other') activeStaff.add(assistantVal);
+            
+            document.querySelectorAll('input[name="anesthetist"]:checked').forEach(el => activeStaff.add(el.value));
+            document.querySelectorAll('input[name="nurse"]:checked').forEach(el => activeStaff.add(el.value));
+
+            // 2. Gather all currently selected permission staff
+            const permStaff = new Set();
+            document.querySelectorAll('input[name="permStaff"]:checked').forEach(el => permStaff.add(el.value));
+
+            // 3. Process Permission Checkboxes
+            document.querySelectorAll('input[name="permStaff"]').forEach(checkbox => {
+                const label = checkbox.parentElement;
+                
+                if (lockedStaffToday.has(checkbox.value)) {
+                    // System Lock (from previous cases today)
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.className = 'flex items-center opacity-50 line-through text-red-500';
+                    label.title = "Staff is unavailable today due to previous permission.";
+                } else if (activeStaff.has(checkbox.value)) {
+                    // Mutual Exclusion Lock (Active in THIS case)
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.className = 'flex items-center opacity-50 text-gray-400';
+                    label.title = "Cannot select: Staff is joining this case.";
+                } else {
+                    // Available
+                    checkbox.disabled = false;
+                    label.className = 'flex items-center';
+                    label.title = "";
+                }
+            });
+
+            // 4. Process Active Role Checkboxes (Anesthetists & Nurses)
+            document.querySelectorAll('input[name="anesthetist"], input[name="nurse"]').forEach(checkbox => {
+                const label = checkbox.parentElement;
+                
+                if (lockedStaffToday.has(checkbox.value)) {
+                    // System Lock
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.className = 'flex items-center opacity-50 line-through text-red-500';
+                    label.title = "Staff is unavailable today due to previous permission.";
+                } else if (permStaff.has(checkbox.value)) {
+                    // Mutual Exclusion Lock (Marked as permission in THIS case)
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                    label.className = 'flex items-center opacity-50 text-gray-400';
+                    label.title = "Cannot select: Staff is marked with permission.";
+                } else {
+                    // Available
+                    checkbox.disabled = false;
+                    label.className = 'flex items-center';
+                    label.title = "";
+                }
+            });
+
+            // 5. Process Assistant Dropdown Options
+            const assistantSelect = document.getElementById('assistant');
+            Array.from(assistantSelect.options).forEach(opt => {
+                if (opt.value && opt.value !== 'Other') {
+                    if (lockedStaffToday.has(opt.value) || permStaff.has(opt.value)) {
+                        opt.disabled = true;
+                        // Clear selection if the currently selected assistant becomes locked
+                        if (assistantSelect.value === opt.value) assistantSelect.value = "";
+                    } else {
+                        opt.disabled = false;
+                    }
+                }
+            });
+
+            // Refresh text headers after adjusting locks
+            refreshDropdownText('anesthetistSelectedText', 'anesthetist');
+            refreshDropdownText('nurseSelectedText', 'nurse');
+            refreshDropdownText('permissionStaffSelectedText', 'permStaff');
+        }
+
+        // Updated Function to trigger the locks
         function updateAndApplyLockedStaff() {
             lockedStaffToday.clear();
             const selectedDate = document.getElementById('calendarPicker').value;
@@ -323,24 +446,8 @@
                 }
             }
 
-            const allStaffCheckboxes = document.querySelectorAll('input[name="anesthetist"], input[name="nurse"], input[name="permStaff"]');
-            allStaffCheckboxes.forEach(checkbox => {
-                const label = checkbox.parentElement;
-                if (lockedStaffToday.has(checkbox.value)) {
-                    checkbox.disabled = true;
-                    checkbox.checked = false;
-                    label.classList.add('opacity-50', 'line-through', 'text-red-500');
-                    label.title = "Staff is unavailable today due to permission status.";
-                } else {
-                    checkbox.disabled = false;
-                    label.classList.remove('opacity-50', 'line-through', 'text-red-500');
-                    label.title = "";
-                }
-            });
-
-            refreshDropdownText('anesthetistSelectedText', 'anesthetist');
-            refreshDropdownText('nurseSelectedText', 'nurse');
-            refreshDropdownText('permissionStaffSelectedText', 'permStaff');
+            // Calls the unified lock system instead of duplicating code here
+            applyStaffLocks();
         }
 
         function fetchServerData() {
@@ -439,7 +546,22 @@
                 }
             });
 
-            // Diagnosis Dropdown
+            const assistantSelect = document.getElementById('assistant');
+            const otherAssistantBox = document.getElementById('otherAssistantBox');
+            const otherAssistantText = document.getElementById('otherAssistantText');
+
+            assistantSelect.addEventListener('change', function() {
+                if (this.value === 'Other') {
+                    otherAssistantBox.classList.remove('hidden');
+                    otherAssistantText.required = true;
+                } else {
+                    otherAssistantBox.classList.add('hidden');
+                    otherAssistantText.required = false;
+                    otherAssistantText.value = '';
+                }
+                applyStaffLocks(); // Re-trigger locks when assistant changes
+            });
+
             const diagToggle = document.getElementById('diagnosisDropdownToggle');
             const diagMenu = document.getElementById('diagnosisMenu');
             const diagSelectedText = document.getElementById('diagnosisSelectedText');
@@ -532,7 +654,6 @@
             function setupDropdown(toggleId, menuId, textId, checkboxName) {
                 const toggle = document.getElementById(toggleId);
                 const menu = document.getElementById(menuId);
-                const textSpan = document.getElementById(textId);
                 const checkboxes = document.querySelectorAll(`input[name="${checkboxName}"]`);
 
                 toggle.addEventListener('click', (e) => {
@@ -548,19 +669,12 @@
 
                 checkboxes.forEach(box => {
                     box.addEventListener('change', () => {
-                        // Prevent selection of disabled options
                         if (box.disabled) {
                             box.checked = false;
                             return;
                         }
-                        const selected = Array.from(checkboxes).filter(i => i.checked).map(i => i.value);
-                        if (selected.length === 0) {
-                            textSpan.innerText = toggleId.includes('anesthetist') ? "Select Anesthetist(s)..." :
-                                                 toggleId.includes('nurse') ? "Select Scrub Nurse(s)..." :
-                                                 toggleId.includes('permissionStaff') ? "Select Staff(s) with Permission..." : "Select Permission Type(s)...";
-                        } else {
-                            textSpan.innerText = selected.join(', ');
-                        }
+                        // Triggers the real-time locking check
+                        applyStaffLocks(); 
                     });
                 });
             }
@@ -569,7 +683,6 @@
             setupDropdown('nurseDropdownToggle', 'nurseMenu', 'nurseSelectedText', 'nurse');
             setupDropdown('permissionStaffDropdownToggle', 'permissionStaffMenu', 'permissionStaffSelectedText', 'permStaff');
 
-            // LOGIC FOR "Type of permission" RADIO BUTTONS
             const permTypeToggle = document.getElementById('permTypeDropdownToggle');
             const permTypeMenu = document.getElementById('permTypeMenu');
             const permTypeSelectedText = document.getElementById('permTypeSelectedText');
@@ -606,25 +719,32 @@
             function resetFormUI() {
                 document.getElementById('orForm').reset();
                 document.getElementById('surgeon').value = currentSurgeonName;
+                
+                document.getElementById('assistant').value = "";
+                document.getElementById('otherAssistantBox').classList.add('hidden');
+                document.getElementById('otherAssistantText').value = "";
+                
+                document.getElementById('diagnosisSelectedText').innerText = "Select or search diagnosis...";
+                document.getElementById('otherDiagnosisBox').classList.add('hidden');
+                
+                document.getElementById('anesthetistSelectedText').innerText = "Select Anesthetist(s)...";
+                document.getElementById('nurseSelectedText').innerText = "Select Scrub Nurse(s)...";
+                document.getElementById('permissionStaffSelectedText').innerText = "Select Staff(s) with Permission...";
+                document.getElementById('permTypeSelectedText').innerText = "Select Permission Type...";
+                
+                hideLateSection();
+                document.getElementById('otherPermTypeBox').classList.add('hidden');
+
                 if(calendarInstance) {
                     calendarInstance.setDate(new Date(), true);
                 }
-                
                 const resetTime = new Date();
                 const resetTimeStr = String(resetTime.getHours()).padStart(2, '0') + ":" + String(resetTime.getMinutes()).padStart(2, '0');
                 const endedTimePicker = document.getElementById('endedTime')._flatpickr;
                 if(endedTimePicker) {
                     endedTimePicker.setDate(resetTimeStr, true);
                 }
-                
-                diagSelectedText.innerText = "Select or search diagnosis...";
-                otherDiagBox.classList.add('hidden');
-                hideLateSection();
-                
-                document.getElementById('permTypeSelectedText').innerText = "Select Permission Type...";
-                otherPermTypeBox.classList.add('hidden');
 
-                // Reapply UI locks and reset text for staff
                 updateAndApplyLockedStaff();
             }
 
@@ -683,6 +803,11 @@
                     return;
                 }
 
+                let finalAssistant = document.getElementById('assistant').value;
+                if (finalAssistant === 'Other') {
+                    finalAssistant = document.getElementById('otherAssistantText').value;
+                }
+
                 const selectedDiagRadio = document.querySelector('input[name="diagnosisRadio"]:checked');
                 let finalDiagnosis = selectedDiagRadio ? selectedDiagRadio.value : "";
                 if (finalDiagnosis === "Other (Please Specify)") {
@@ -696,6 +821,7 @@
                     date: newDateRaw,
                     inputTime: new Date().toLocaleTimeString(),
                     surgeon: document.getElementById('surgeon').value,
+                    assistant: finalAssistant, 
                     caseStatus: document.getElementById('caseStatus').value,
                     diagnosis: finalDiagnosis,
                     plannedTime: document.getElementById('plannedTime').value,
@@ -730,6 +856,7 @@
                             start: newActual,
                             end: newEnded,
                             surgeon: currentSurgeonName,
+                            assistant: finalAssistant, 
                             staffPerm: staffPerms,
                             permType: permTypes
                         });
